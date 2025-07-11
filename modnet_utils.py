@@ -6,7 +6,7 @@ from torchvision import transforms
 
 def load_modnet_model(ckpt_path):
     model = MODNet(backbone_pretrained=False)
-    model.load_state_dict(torch.load(ckpt_path, map_location=torch.device('cpu')))
+    model.load_state_dict(torch.load(ckpt_path, map_location=torch.device('cpu'), weights_only=False))
     model.eval()
     return model
 
