@@ -4,3 +4,5 @@ Pillow
 torch
 numpy
 opencv-python
+torch
+torchvision
