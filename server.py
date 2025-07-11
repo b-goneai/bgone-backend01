@@ -1,39 +1,39 @@
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, send_file, jsonify
 from flask_cors import CORS
 from PIL import Image
-from io import BytesIO
+import torch
 import numpy as np
-import onnxruntime as ort
-from modnet_utils import preprocess, postprocess
+import io
+import os
+from modnet_utils import load_modnet_model, run_modnet
 
 app = Flask(__name__)
 CORS(app)
 
-# Load MODNet ONNX model once
-session = ort.InferenceSession("models/modnet.onnx")
+modnet = load_modnet_model("models/modnet_photographic_portrait_matting.ckpt")
 
 @app.route("/remove-bg", methods=["POST"])
 def remove_bg():
     if 'image' not in request.files:
         return jsonify({"error": "No image uploaded"}), 400
+
     try:
-        file = request.files['image']
-        image = Image.open(file.stream).convert("RGB")
-        input_tensor = preprocess(image)
-        result = session.run(None, {"input": input_tensor})[0]
-        result_img = postprocess(result, image)
-        buffer = BytesIO()
-        result_img.save(buffer, format="PNG")
-        buffer.seek(0)
-        return send_file(buffer, mimetype='image/png')
+        image_file = request.files['image']
+        input_image = Image.open(image_file.stream).convert("RGB")
+        output = run_modnet(modnet, input_image)
+
+        buf = io.BytesIO()
+        output.save(buf, format="PNG")
+        buf.seek(0)
+
+        return send_file(buf, mimetype="image/png", download_name="no-bg.png")
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 @app.route("/", methods=["GET"])
 def health():
-    return jsonify({"status": "MODNet backend running"}), 200
+    return jsonify({"status": "modnet backend running"}), 200
 
 if __name__ == "__main__":
-    import os
-    port = int(os.environ.get("PORT", 5000))
+    port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
