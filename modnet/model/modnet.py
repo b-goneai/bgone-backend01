@@ -1,28 +1,53 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-
-from .backbones import MobileNetV2  # or another backbone import
-from .layers import ASPP  # Efficient Atrous Spatial Pyramid Pooling
+from torchvision import models
 
 class MODNet(nn.Module):
-    def __init__(self, backbone_pretrained=True, backbone='mobilenetv2'):
+    def __init__(self, backbone_pretrained=True):
         super(MODNet, self).__init__()
-        # Semantic segmentation branch (backbone + ASPP)
-        self.stage1 = MobileNetV2(backbone_pretrained)
-        self.aspp = ASPP(...)
-        # Detail and matting branches
-        self.stage2 = DetailBranch(...)
-        self.stage3 = MatteBranch(...)
-    
-    def forward(self, x, return_matte_only=False):
-        # Stage 1: semantic estimation
-        sem = self.aspp(self.stage1(x))
-        # Stage 2: detail prediction
-        det = self.stage2(x, sem)
-        # Stage 3: alpha matte generation
-        mat = self.stage3(x, sem, det)
-        if return_matte_only:
-            return None, None, mat
-        return sem, det, mat
 
+        # Encoder: MobileNetV2
+        mnet = models.mobilenet_v2(pretrained=backbone_pretrained)
+        self.backbone = mnet.features
+
+        self.downsample = nn.Sequential(
+            nn.Conv2d(3, 32, kernel_size=3, stride=2, padding=1, bias=False),
+            nn.BatchNorm2d(32),
+            nn.ReLU6(inplace=True)
+        )
+
+        # Decoder
+        self.deconv1 = nn.ConvTranspose2d(1280, 512, kernel_size=2, stride=2)
+        self.bn1 = nn.BatchNorm2d(512)
+        self.relu1 = nn.ReLU(inplace=True)
+
+        self.deconv2 = nn.ConvTranspose2d(512, 256, kernel_size=2, stride=2)
+        self.bn2 = nn.BatchNorm2d(256)
+        self.relu2 = nn.ReLU(inplace=True)
+
+        self.deconv3 = nn.ConvTranspose2d(256, 64, kernel_size=2, stride=2)
+        self.bn3 = nn.BatchNorm2d(64)
+        self.relu3 = nn.ReLU(inplace=True)
+
+        self.final = nn.Conv2d(64, 1, kernel_size=1)
+
+    def forward(self, x):
+        x = self.downsample(x)
+        x = self.backbone(x)
+
+        x = self.deconv1(x)
+        x = self.bn1(x)
+        x = self.relu1(x)
+
+        x = self.deconv2(x)
+        x = self.bn2(x)
+        x = self.relu2(x)
+
+        x = self.deconv3(x)
+        x = self.bn3(x)
+        x = self.relu3(x)
+
+        x = self.final(x)
+        x = torch.sigmoid(x)
+
+        return x
